@@ -4,6 +4,9 @@
  * Works across all major browsers with proper fallbacks
  */
 
+// Add a flag to track if we've already shown the browser compatibility warning
+let hasShownBrowserWarning = false;
+
 /**
  * Check if the browser supports media devices
  * @returns {boolean} True if media devices are supported
@@ -19,7 +22,14 @@ export const isMediaDevicesSupported = () => {
   const hasStandardMediaDevices = !!(navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function');
   const hasLegacyGetUserMedia = !!(navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia || navigator.msGetUserMedia);
   
-  return hasStandardMediaDevices || hasLegacyGetUserMedia;
+  // If media devices are not supported and we haven't shown the warning yet, show it
+  const isSupported = hasStandardMediaDevices || hasLegacyGetUserMedia;
+  if (!isSupported && !hasShownBrowserWarning) {
+    console.warn('WebRTC is not supported in this browser. Please use a modern browser like Chrome, Firefox, Edge, or Safari.');
+    hasShownBrowserWarning = true;
+  }
+  
+  return isSupported;
 };
 
 /**
@@ -63,6 +73,16 @@ const getLegacyUserMedia = (constraints) => {
  * @returns {Promise<MediaStream>} Media stream promise
  */
 export const getUserMedia = async (constraints = { video: true, audio: true }) => {
+  // Check if we're in a browser environment
+  if (typeof navigator === 'undefined' || typeof window === 'undefined') {
+    throw new Error('WebRTC is not available in this environment.');
+  }
+  
+  // Check if media devices are supported
+  if (!isMediaDevicesSupported()) {
+    throw new Error('WebRTC is not supported in this browser. Please use a modern browser like Chrome, Firefox, Edge, or Safari.');
+  }
+  
   // First try the standard modern API
   if (navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function') {
     try {
@@ -81,7 +101,7 @@ export const getUserMedia = async (constraints = { video: true, audio: true }) =
       return stream;
     } catch (error) {
       console.error('Legacy getUserMedia also failed:', error);
-      throw this.formatError(error);
+      throw formatError(error);
     }
   }
   

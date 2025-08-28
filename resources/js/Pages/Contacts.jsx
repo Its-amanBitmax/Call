@@ -10,7 +10,10 @@ export default function Contacts({ auth, users }) {
   
     const [selectedUser, setSelectedUser] = useState(null);
     const [peer, setPeer] = useState(new Peer());
-    const [peerCall, setPeer极速赛车开奖直播Call] = useState(null);
+    const [peerCall, setPeerCall] = useState(null);
+    
+    // Add error state for peer connection
+    const [peerError, setPeerError] = useState(null);
  
     const remoteVideoRef = useRef(null);
     const localVideoRef = useRef(null);
@@ -24,8 +27,20 @@ export default function Contacts({ auth, users }) {
     }, [selectedUser]);
   
     const callUser = () => {
+        // Check if we have a valid peer ID
+        if (!peer.id) {
+            alert('Connection not ready. Please wait a moment and try again.');
+            return;
+        }
+        
+        // Check if we're already in a call
+        if (isCalling) {
+            alert('You are already in a call.');
+            return;
+        }
+        
         let payload = {
-            peer极速赛车开奖直播Id: peer.id
+            peerId: peer.id
         };
         axios.post(`/video-call/request/${selectedUserRef.current.id}`, payload);
         setIsCalling(true);
@@ -46,50 +61,98 @@ export default function Contacts({ auth, users }) {
             remoteVideoRef.current.srcObject = null;
         }
         setIsCalling(false);
+        setPeerError(null); // Reset peer error state
     };
       
     const displayLocalVideo = async () => {
         try {
+            // Check if we already have a stream and stop it first
+            if (localStreamRef.current) {
+                stopMediaStream(localStreamRef.current);
+            }
+            
+            // Check if media devices are supported
+            if (!isMediaDevicesSupported()) {
+                throw new Error('WebRTC is not supported in this browser. Please use a modern browser like Chrome, Firefox, Edge, or Safari.');
+            }
+            
             const stream = await getUserMedia({ video: true, audio: true });
             localVideoRef.current.srcObject = stream;
             localStreamRef.current = stream;
         } catch (error) {
             console.error('Error accessing media devices:', error);
-            alert(error.message); // Show user-friendly error message
+            // Provide more specific error messages to the user
+            let errorMessage = 'Failed to access camera/microphone. ';
+            if (error.name === 'NotReadableError') {
+                errorMessage += 'Device is already in use by another application.';
+            } else if (error.name === 'NotAllowedError') {
+                errorMessage += 'Please allow camera/microphone access when prompted.';
+            } else if (error.message) {
+                errorMessage += error.message;
+            } else {
+                errorMessage += 'Please check your device connections and browser permissions.';
+            }
+            alert(errorMessage);
         }
     };
  
-    const recipientAcceptCall = (e) => {
-        // send signal that recipient accept the call
-        axios.post(`极速赛车开奖直播/video-call/request/status/${e.user.from极速赛车开奖直播User.id}`, { peerId: peer.id, status: 'accept' });
-      
-        // stand by for callers connection
+    useEffect(() => {
+        // Handle peer connection errors
+        peer.on('error', (err) => {
+            console.error('Peer connection error:', err);
+            setPeerError(err);
+            alert('Connection error: ' + err.message);
+        });
+        
+        // Register peer call event handler once on mount
         peer.on('call', (call) => {
-            // will be used when ending a call
             setPeerCall(call);
-            // accept call if the caller is the one that you accepted
-            if (e.user.peerId === call.peer) {
-                // Prompt user to allow media devices
-                getUserMedia({ video: true, audio: true })
+            // Prompt user to allow media devices and answer the call
+            getUserMedia({ video: true, audio: true })
                 .then((stream) => {
-                    // Answer the call with your stream
-                    call.answer(stream); 
-                    // Listen for the caller's stream
+                    call.answer(stream);
+                    remoteVideoRef.current.srcObject = null; // Clear previous stream
                     call.on('stream', (remoteStream) => {
                         remoteVideoRef.current.srcObject = remoteStream;
                     });
-      
-                    // caller end the call
                     call.on('close', () => {
                         endCall();
                     });
                 })
                 .catch((err) => {
                     console.error('Error accessing media devices:', err);
-                    alert(err.message); // Show user-friendly error message
+                    // Provide more specific error messages to the user
+                    let errorMessage = 'Failed to access camera/microphone. ';
+                    if (err.name === 'NotReadableError') {
+                        errorMessage += 'Device is already in use by another application.';
+                    } else if (err.name === 'NotAllowedError') {
+                        errorMessage += 'Please allow camera/microphone access when prompted.';
+                    } else if (err.message) {
+                        errorMessage += err.message;
+                    } else {
+                        errorMessage += 'Please check your device connections and browser permissions.';
+                    }
+                    alert(errorMessage);
                 });
-            }
         });
+        
+        // Clean up peer connection on unmount
+        return () => {
+            if (peer) {
+                peer.destroy();
+            }
+        };
+    }, [peer]);
+
+    const recipientAcceptCall = (e) => {
+        console.log('Incoming event:', e);
+        console.log('Full event data:', JSON.stringify(e, null, 2));
+        if (!e.user.fromUser || !e.user.fromUser.id) {
+            console.error('User data is undefined or missing id:', e.user);
+            return;
+        }
+        // send signal that recipient accept the call
+        axios.post(`/video-call/request/status/${e.user.fromUser.id}`, { peerId: peer.id, status: 'accept' });
     };
  
     const createConnection = (e) => {
@@ -102,7 +165,7 @@ export default function Contacts({ auth, users }) {
             setPeerCall(call);
       
             // Listen for the receiver's stream
-            call.on('极速赛车开奖直播stream', (remoteStream) => {
+call.on('stream', (remoteStream) => {
                 remoteVideoRef.current.srcObject = remoteStream;
             });
       
@@ -111,9 +174,20 @@ export default function Contacts({ auth, users }) {
                 endCall();
             });
         })
-        .catch((极速赛车开奖直播err) => {
+            .catch((err) => {
             console.error('Error accessing media devices:', err);
-            alert(err.message); // Show user-friendly error message
+            // Provide more specific error messages to the user
+            let errorMessage = 'Failed to access camera/microphone. ';
+            if (err.name === 'NotReadableError') {
+                errorMessage += 'Device is already in use by another application.';
+            } else if (err.name === 'NotAllowedError') {
+                errorMessage += 'Please allow camera/microphone access when prompted.';
+            } else if (err.message) {
+                errorMessage += err.message;
+            } else {
+                errorMessage += 'Please check your device connections and browser permissions.';
+            }
+            alert(errorMessage);
         });
     };
   
@@ -127,7 +201,7 @@ export default function Contacts({ auth, users }) {
         });
     
         // video call request accepted
-        window.Echo.private(`video-call.${auth.user.id}`).listen('RequestVideoCallStatus', (e极速赛车开奖直播) => {
+        window.Echo.private(`video-call.${auth.user.id}`).listen('RequestVideoCallStatus', (e) => {
             createConnection(e);
         });
     };
@@ -147,7 +221,7 @@ export default function Contacts({ auth, users }) {
             <div className="h-screen flex bg-gray-100" style={{ height: '90vh' }}>
                 {/* Sidebar */}
                 <div className="w-1/4 bg-white border-r border-gray-200">
-                    <div className="p极速赛车开奖直播-4 bg-gray-100 font-bold text-lg border-b border-gray-200">
+<div className="p-4 bg-gray-100 font-bold text-lg border-b border-gray-200">
                         Contacts
                     </div>
                     <div className="p-4 space-y-4">
